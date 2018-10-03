@@ -1,0 +1,81 @@
+---
+- hosts: localhost
+  name: "Instalação da rota no FIS no Openshift"
+  connection: local
+
+  tasks:
+
+
+    #- name: Openshift login com o usuário de sistema
+    #  shell: oc login -u system:admin {{url_openshift}}
+
+    #- name: Openshift permissao de system-admin no usuario admin
+    #  shell: oc adm policy add-cluster-role-to-user cluster-admin admin
+
+    #- name: Openshift permissao de root
+    #  shell: oc adm policy add-scc-to-user anyuid -n ci -z default
+
+    - name: Configurando Minishift profile Istio
+      shell: minishift profile set istio-work
+
+    - name: Configurando Minishift 8GB
+      shell: minishift config set memory 8GB
+
+    - name: Configurando Minishift 3 CPUs
+      shell: minishift config set cpus 3
+
+    - name: Configurando Minishift driver xhyve
+      shell: minishift config set vm-driver xhyve
+
+    - name: Configurando Minishift image caching
+      shell: minishift config set image-caching true
+
+    - name: Configurando Minishift admin-user
+      shell: minishift addon enable admin-user
+
+    - name: Configurando Minishift anyuid
+      shell: minishift addon enable anyuid
+
+    - name: Configurando Minishift metrics
+      shell: MINISHIFT_ENABLE_EXPERIMENTAL=y minishift start --extra-clusterup-flags "--metrics"
+
+    - name: Openshift login com o usuário de sistema
+      shell: oc login $(minishift ip):8443 -u admin -p admin
+
+#    - name: Execuando playbook fix metrics
+#      shell: ansible-playbook fix.yml
+
+    - name: Download do Istio for OSX
+      shell: curl -L https://github.com/istio/istio/releases/download/1.0.0/istio-1.0.0-osx.tar.gz | tar xz
+
+    - name: Exportando ISTIO_HOME
+      shell: export ISTIO_HOME=`pwd`
+
+    - name: Exportando PATH
+      shell: export PATH=$ISTIO_HOME/bin:$PATH
+
+    - name: Instalando crds.yaml
+      shell: oc apply -f istio-1.0.0/install/kubernetes/helm/istio/templates/crds.yaml
+
+    - name: Instalando istio-demo.yaml
+      shell: oc apply -f istio-1.0.0/install/kubernetes/istio-demo.yaml
+
+    - name: Criando projeto istio-system
+      shell: oc project istio-system
+
+    - name: Expondo svc istio-ingressgateway 
+      shell: oc expose svc istio-ingressgateway
+
+    - name: Expondo svc servicegraph
+      shell: oc expose svc servicegraph
+
+    - name: Expondo svc grafana
+      shell: oc expose svc grafana
+
+    - name: Expondo svc prometheus
+      shell: oc expose svc prometheus
+
+    - name: Expondo svc tracing
+      shell: oc expose svc tracing
+
+
