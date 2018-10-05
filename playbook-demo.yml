@@ -1,81 +1,99 @@
 ---
 - hosts: localhost
-  name: "Instalação da rota no FIS no Openshift"
+  name: "Execução da Demo do Istio"
   connection: local
 
   tasks:
 
+    - name: Abrindo URL Grafana
+      shell: open "$(minishift openshift service grafana -u)/d/1/istio-dashboard?refresh=5s&orgId=1"
 
-    #- name: Openshift login com o usuário de sistema
-    #  shell: oc login -u system:admin {{url_openshift}}
+    - name: Abrindo URL de Workload dos serviços
+      shell: open "$(minishift openshift service grafana -u)/d/UbsSZTDik/istio-workload-dashboard?refresh=5s&orgId=1"
 
-    #- name: Openshift permissao de system-admin no usuario admin
-    #  shell: oc adm policy add-cluster-role-to-user cluster-admin admin
+    - name: Abrindo métricas customizadas
+      shell: open "$(minishift openshift service prometheus -u)/graph?g0.range_input=5m&g0.expr=&g0.tab=0"
 
-    #- name: Openshift permissao de root
-    #  shell: oc adm policy add-scc-to-user anyuid -n ci -z default
+    - name: Abrindo métricas customizadas
+      shell: ./istio-1.0.0/bin/istioctl create -f istio-tutorial/istiofiles/recommendation_requestcount.yml -n istio-system | echo "RequestCount ja existe"
 
-    - name: Configurando Minishift profile Istio
-      shell: minishift profile set istio-work
+    - pause:
+        prompt: istio_requests_total{destination_service="recommendation.tutorial.svc.cluster.local"}
 
-    - name: Configurando Minishift 8GB
-      shell: minishift config set memory 8GB
+    - name: Enviando requests ao serviço Customer
+      shell: curl customer-tutorial.$(minishift ip).nip.io
+      with_sequence: start=0 end=50
 
-    - name: Configurando Minishift 3 CPUs
-      shell: minishift config set cpus 3
+    - pause:
+        prompt: "====================  Tracing"
 
-    - name: Configurando Minishift driver xhyve
-      shell: minishift config set vm-driver xhyve
+    - name: Abrindo Jaeger
+      shell: minishift openshift service tracing --in-browser
 
-    - name: Configurando Minishift image caching
-      shell: minishift config set image-caching true
+    - pause:
+        prompt: "====================  Deploy de nova versão Recommendation-V2"
 
-    - name: Configurando Minishift admin-user
-      shell: minishift addon enable admin-user
+    - name: Alterando RecommendationVerticle.java para nova versão
+      shell: sed -i -e 's/recommendation v1/recommendation v2/g' istio-tutorial/recommendation/java/vertx/src/main/java/com/redhat/developer/demos/recommendation/RecommendationVerticle.java
 
-    - name: Configurando Minishift anyuid
-      shell: minishift addon enable anyuid
+    - name: Compilando o sistema recommendation
+      shell: cd istio-tutorial;mvn clean package -f recommendation/java/vertx
 
-    - name: Configurando Minishift metrics
-      shell: MINISHIFT_ENABLE_EXPERIMENTAL=y minishift start --extra-clusterup-flags "--metrics"
+    - name: Criando aplicação recommendation v2
+      shell: oc new-app -l app=recommendation,version=v2 --name=recommendation-v2 --context-dir=recommendation/java/vertx -e JAEGER_SERVICE_NAME=recommendation JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > recommendation-v2.yml
 
-    - name: Openshift login com o usuário de sistema
-      shell: oc login $(minishift ip):8443 -u admin -p admin
+    - name: Gerando nova versão do projeto recommendation
+      shell: ./istio-1.0.0/bin/istioctl kube-inject -f recommendation-v2.yml | oc apply -f -
 
-#    - name: Execuando playbook fix metrics
-#      shell: ansible-playbook fix.yml
+    - name: Cancelando build v2
+      shell: oc cancel-build svc/recommendation-v2
 
-    - name: Download do Istio for OSX
-      shell: curl -L https://github.com/istio/istio/releases/download/1.0.0/istio-1.0.0-osx.tar.gz | tar xz
+    - name: Deletando build v2
+      shell: oc delete svc/recommendation-v2
 
-    - name: Exportando ISTIO_HOME
-      shell: export ISTIO_HOME=`pwd`
+    - name: Iniciando build v2 a partir do binário
+      shell: cd istio-tutorial; oc start-build recommendation-v2 --from-dir=. --follow
 
-    - name: Exportando PATH
-      shell: export PATH=$ISTIO_HOME/bin:$PATH
+    - name: Aguardando build recommendation v2
+      shell: oc get po | grep -v build | grep Running
+      register: recv2
+      until: recv2.stdout.find("recommendation-v2") != -1
+      retries: 30
+      delay: 30
 
-    - name: Instalando crds.yaml
-      shell: oc apply -f istio-1.0.0/install/kubernetes/helm/istio/templates/crds.yaml
+    - name: Testando recommendation v2
+      shell: RESULT=$(curl customer-tutorial.$(minishift ip).nip.io);echo $RESULT
+      register: rectest
+      until: rectest.stdout.find("naoexiste") != -1
+      retries: 30
+      delay: 3
 
-    - name: Instalando istio-demo.yaml
-      shell: oc apply -f istio-1.0.0/install/kubernetes/istio-demo.yaml
+    - pause:
 
-    - name: Criando projeto istio-system
-      shell: oc project istio-system
+    - name: Escalando recommendation-v2 para 2 replicas
+      shell: oc scale --replicas=2 deployment/recommendation-v2
 
-    - name: Expondo svc istio-ingressgateway 
-      shell: oc expose svc istio-ingressgateway
+    - name: Testando recommendation v2
+      shell: RESULT=$(curl customer-tutorial.$(minishift ip).nip.io);echo $RESULT
+      register: rectest
+      until: rectest.stdout.find("naoexiste") != -1
+      retries: 20
+      delay: 2
 
-    - name: Expondo svc servicegraph
-      shell: oc expose svc servicegraph
+    - pause:
 
-    - name: Expondo svc grafana
-      shell: oc expose svc grafana
+    - name: Voltando recommendation-v2 para 1 replica
+      shell: oc scale --replicas=1 deployment/recommendation-v2
 
-    - name: Expondo svc prometheus
-      shell: oc expose svc prometheus
+    - pause:
+        prompt: "Mudando todos os usuários para a versão 2 de Recommendation"
 
-    - name: Expondo svc tracing
-      shell: oc expose svc tracing
+
+
+
+
+
+
+
 
 
