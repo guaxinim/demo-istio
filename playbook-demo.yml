@@ -14,8 +14,14 @@
     - name: Abrindo métricas customizadas
       shell: open "$(minishift openshift service prometheus -u)/graph?g0.range_input=5m&g0.expr=&g0.tab=0"
 
-    - name: Abrindo métricas customizadas
-      shell: ./istio-1.0.0/bin/istioctl create -f istio-tutorial/istiofiles/recommendation_requestcount.yml -n istio-system | echo "RequestCount ja existe"
+    - name: Exportando ISTIO_HOME
+      shell: export ISTIO_HOME=`pwd`/istio-1.0.0/bin
+
+    - name: Exportando PATH
+      shell: export PATH=$ISTIO_HOME/bin:$PATH
+
+    - name: Criando recommendation request no istio
+      shell: istioctl create -f istio-tutorial/istiofiles/recommendation_requestcount.yml -n istio-system | echo "RequestCount ja existe"
 
     - pause:
         prompt: istio_requests_total{destination_service="recommendation.tutorial.svc.cluster.local"}
@@ -43,10 +49,10 @@
       shell: oc new-app -l app=recommendation,version=v2 --name=recommendation-v2 --context-dir=recommendation/java/vertx -e JAEGER_SERVICE_NAME=recommendation JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > recommendation-v2.yml
 
     - name: Gerando nova versão do projeto recommendation
-      shell: ./istio-1.0.0/bin/istioctl kube-inject -f recommendation-v2.yml | oc apply -f -
+      shell: istioctl kube-inject -f recommendation-v2.yml | oc apply -f -
 
     - name: Cancelando build v2
-      shell: oc cancel-build svc/recommendation-v2
+      shell: oc cancel-build bc/recommendation-v2
 
     - name: Deletando build v2
       shell: oc delete svc/recommendation-v2
@@ -62,38 +68,74 @@
       delay: 30
 
     - name: Testando recommendation v2
-      shell: RESULT=$(curl customer-tutorial.$(minishift ip).nip.io);echo $RESULT
+      shell: curl customer-tutorial.$(minishift ip).nip.io
       register: rectest
-      until: rectest.stdout.find("naoexiste") != -1
+      until: rectest.stdout.find("recommendation v2") != -1
       retries: 30
-      delay: 3
-
-    - pause:
-
-    - name: Escalando recommendation-v2 para 2 replicas
-      shell: oc scale --replicas=2 deployment/recommendation-v2
-
-    - name: Testando recommendation v2
-      shell: RESULT=$(curl customer-tutorial.$(minishift ip).nip.io);echo $RESULT
-      register: rectest
-      until: rectest.stdout.find("naoexiste") != -1
-      retries: 20
       delay: 2
 
     - pause:
+        prompt: "while [ true ]; do curl http://customer-tutorial.$(minishift ip).nip.io/; sleep 1.5; echo; done"
+
+    - name: Escalando recommendation-v2 para 2 replicas
+      shell: oc scale --replicas=2 dc/recommendation-v2
+
+    - pause:
+        prompt: "Voltando para 1 replica"
 
     - name: Voltando recommendation-v2 para 1 replica
-      shell: oc scale --replicas=1 deployment/recommendation-v2
+      shell: oc scale --replicas=1 dc/recommendation-v2
 
     - pause:
         prompt: "Mudando todos os usuários para a versão 2 de Recommendation"
 
+    - name: Criando regra no istio de mudança para recommendation-v2
+      shell: istioctl create -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra recommendation-v1-v2 ja existe"
 
+    - name: Criando serviço recommendation-v2
+      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v2.yml -n tutorial | echo "servico-v2 ja existe"
 
+    - pause:
+        prompt: "Mudando todos os usuários para a versão 1 de Recommendation"
 
+    - name: Sobrescrevendo regra no istio de mudança para a versao 1
+      shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "regra-v1 nao encontrada"
 
+    - pause:
+        prompt: "Mudando os usuários para versão 1 e versão 2"
 
+    - name: Removendo a regra de roteamento
+      shell: istioctl delete -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "recommendation-v1 nao encontrada"
 
+    - name: Removendo serviço v2
+      shell: oc scale --replicas=0 dc/recommendation-v2
+
+    - pause:
+        prompt: "Canary Release ( 90% -> v1  -  10% -> v2 )"
+
+    - name: Criando regra recommendation-v2
+      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2.yml -n tutorial | echo "regra-v2 ja existe"
+
+    - name: Habilitando serviço v2
+      shell: oc scale --replicas=1 dc/recommendation-v2
+
+    - pause:
+        prompt: "Canary Release ( 75% -> v1  -  25% -> v2 )"
+
+    - name: Criando regra recommendation-v2
+      shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2_75_25.yml -n tutorial | echo "regra-v2 ja existe"
+
+    - pause:
+        prompt: "Removendo regras"
+
+    - name: Removendo regra recommendation-v2
+      shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2_75_25.yml -n tutorial | echo "regra-v2 ja existe"
+
+    - name: Removendo destino recommendation-v2
+      shell: istioctl replace -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra-v2 ja existe"
+
+    - name: Clean-up
+      shell: ./istio-tutorial/scripts/clean.sh
 
 
 
