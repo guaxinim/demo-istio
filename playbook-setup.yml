@@ -2,6 +2,8 @@
 - hosts: localhost
   name: "Setup da Demo do Istio no Openshift"
   connection: local
+  vars:
+    ocp_url: master.brasilia.openshiftworkshop.com
 
   tasks:
 
@@ -27,20 +29,14 @@
     - name: Configurando Minishift anyuid
       shell: minishift addon enable anyuid
 
-    - name: Configurando Minishift metrics
+    - name: Iniciando minishift...
       shell: MINISHIFT_ENABLE_EXPERIMENTAL=y minishift start --extra-clusterup-flags "--metrics"
 
     - name: Openshift login com o usuário de sistema
       shell: oc login $(minishift ip):8443 -u admin -p admin
 
-    - name: Download do Istio for OSX
-      shell: curl -L https://github.com/istio/istio/releases/download/1.0.0/istio-1.0.0-osx.tar.gz | tar xz
-
-    - name: Exportando ISTIO_HOME
-      shell: export ISTIO_HOME=`pwd`/istio-1.0.0/bin
-
-    - name: Exportando PATH
-      shell: export PATH=$ISTIO_HOME/bin:$PATH
+#    - name: Download do Istio for OSX
+#      shell: curl -L https://github.com/istio/istio/releases/download/1.0.0/istio-1.0.0-osx.tar.gz | tar xz
 
     - name: Instalando crds.yaml
       shell: oc apply -f istio-1.0.0/install/kubernetes/helm/istio/templates/crds.yaml
@@ -73,12 +69,6 @@
       retries: 60
       delay: 20
 
-    - name: Configurando PATH do istio
-      shell: PWD=`pwd`
-
-    - name: Configurando PATH do istio
-      shell: export PATH=$PATH:$PWD/istio-1.0.0/bin
-
     - name: New project tutorial
       shell: oc new-project tutorial
 
@@ -91,8 +81,14 @@
     - name: Iniciando build projeto Customer
       shell: oc new-app --name=customer --context-dir=customer/java/springboot -e JAEGER_SERVICE_NAME=customer JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > customer.yml
 
+#    - name: Exportando ISTIO_HOME
+#      shell: export ISTIO_HOME=`pwd`/istio-1.0.0/bin
+
+#    - name: Exportando PATH
+#      shell: export PATH=$ISTIO_HOME/bin:$PATH
+
     - name: Criando objetos a partir do template Customer
-      shell: istioctl kube-inject -f customer.yml | oc apply -f -
+      shell: ./istio-1.0.0/bin/istioctl kube-inject -f customer.yml | oc apply -f -
 
     - name: Expondo servico customer
       shell: oc delete svc/customer
@@ -111,7 +107,7 @@
       shell: oc expose service customer
 
     - name: Testando projeto Customer
-      shell: curl customer-tutorial.$(minishift ip).nip.io
+      shell: curl customer-tutorial.{{ocp_url}}
       register: custtut
       until: custtut.stdout.find("UnknownHostException") != -1
       retries: 20
@@ -121,7 +117,7 @@
       shell: oc new-app -l app=preference,version=v1 --name=preference-v1 --context-dir=preference/java/springboot -e JAEGER_SERVICE_NAME=preference JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > preference.yml
 
     - name: Criando objetos a partir do template preference
-      shell: istioctl kube-inject -f preference.yml | oc apply -f -
+      shell: ./istio-1.0.0/bin/istioctl kube-inject -f preference.yml | oc apply -f -
 
     - name: Expondo servico preference
       shell: oc delete svc/preference-v1
@@ -137,7 +133,7 @@
       delay: 30
 
     - name: Testando projeto Preference
-      shell: curl customer-tutorial.$(minishift ip).nip.io
+      shell: curl customer-tutorial.{{ocp_url}}
       register: custtut
       until: custtut.stdout.find("503 preference") != -1
       retries: 20
@@ -147,7 +143,7 @@
       shell: oc new-app -l app=recommendation,version=v1 --name=recommendation-v1 --context-dir=recommendation/java/vertx JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > recommendation.yml
 
     - name: Criando objetos a partir do template recommendation
-      shell: istioctl kube-inject -f recommendation.yml | oc apply -f -
+      shell: ./istio-1.0.0/bin/istioctl kube-inject -f recommendation.yml | oc apply -f -
 
     - name: Expondo servico recommendation
       shell: oc delete svc/recommendation-v1
@@ -163,7 +159,7 @@
       delay: 30
 
     - name: Testando projeto Preference
-      shell: curl customer-tutorial.$(minishift ip).nip.io
+      shell: curl customer-tutorial.{{ocp_url}}
       register: rectut
       until: rectut.stdout.find("recommendation v1 from") != -1
       retries: 20

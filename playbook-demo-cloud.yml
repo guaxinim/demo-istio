@@ -1,0 +1,243 @@
+---
+- hosts: localhost
+  name: "Execução da Demo do Istio"
+  connection: local
+  vars:
+    ocp_url: apps.brasilia1.openshiftworkshop.com
+
+  tasks:
+
+    - name: Abrindo URL Grafana
+      shell: open "http://grafana-istio-system.{{ ocp_url }}/d/1/istio-dashboard?refresh=5s&orgId=1"
+
+    - name: Abrindo URL de Workload dos serviços
+      shell: open "http://grafana-istio-system.{{ ocp_url }}/d/UbsSZTDik/istio-workload-dashboard?refresh=5s&orgId=1"
+
+    - name: Abrindo métricas customizadas
+      shell: open "http://prometheus-istio-system.{{ ocp_url }}/graph?g0.range_input=5m&g0.expr=&g0.tab=0"
+
+    - name: Abrindo Kiali
+      shell: open "https://kiali-istio-system.{{ ocp_url }}"
+
+    - name: Exportando ISTIO_HOME
+      shell: export ISTIO_HOME=`pwd`/istio-1.0.0/bin
+
+    - name: Exportando PATH
+      shell: export PATH=$ISTIO_HOME/bin:$PATH
+
+    - name: Criando recommendation request no istio
+      shell: istioctl create -f istio-tutorial/istiofiles/recommendation_requestcount.yml -n istio-system | echo "RequestCount ja existe"
+
+    - pause:
+        prompt: istio_requests_total{destination_service="recommendation.tutorial.svc.cluster.local"}
+
+    - name: Enviando requests ao serviço Customer
+      shell: curl customer-tutorial.{{ ocp_url }}
+      with_sequence: start=0 end=50
+
+    - pause:
+        prompt: "====================  Tracing"
+
+    - name: Abrindo Jaeger
+      shell: open "http://tracing-istio-system.{{ ocp_url }}"
+
+    - pause:
+        prompt: "curl customer-tutorial.{{ ocp_url }}"
+
+    - pause:
+        prompt: "====================  Deploy de nova versão Recommendation-V2"
+
+    - name: Alterando RecommendationVerticle.java para nova versão
+      shell: sed -i -e 's/recommendation v1/recommendation v2/g' istio-tutorial/recommendation/java/vertx/src/main/java/com/redhat/developer/demos/recommendation/RecommendationVerticle.java
+
+    - name: Compilando o sistema recommendation
+      shell: cd istio-tutorial;mvn clean package -f recommendation/java/vertx
+
+    - name: Criando aplicação recommendation v2
+      shell: oc new-app -l app=recommendation,version=v2 --name=recommendation-v2 --context-dir=recommendation/java/vertx -e JAEGER_SERVICE_NAME=recommendation JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > recommendation-v2.yml
+
+    - name: Gerando nova versão do projeto recommendation
+      shell: istioctl kube-inject -f recommendation-v2.yml | oc apply -f -
+
+    - name: Cancelando build v2
+      shell: oc cancel-build bc/recommendation-v2
+
+    - name: Deletando build v2
+      shell: oc delete svc/recommendation-v2
+
+    - name: Iniciando build v2 a partir do binário
+      shell: cd istio-tutorial; oc start-build recommendation-v2 --from-dir=. --follow
+
+    - name: Aguardando build recommendation v2
+      shell: oc get po | grep -v build | grep Running
+      register: recv2
+      until: recv2.stdout.find("recommendation-v2") != -1
+      retries: 30
+      delay: 30
+
+    - name: Testando recommendation v2
+      shell: curl customer-tutorial.{{ ocp_url }}
+      register: rectest
+      until: rectest.stdout.find("recommendation v2") != -1
+      retries: 30
+      delay: 2
+
+    - pause:
+        prompt: "while [ true ]; do curl http://customer-tutorial.{{ ocp_url }}/; sleep 1; echo; done"
+
+    - name: Escalando recommendation-v2 para 2 replicas
+      shell: oc scale --replicas=2 dc/recommendation-v2
+
+    - pause:
+        prompt: "Voltando para 1 replica"
+
+    - name: Voltando recommendation-v2 para 1 replica
+      shell: oc scale --replicas=1 dc/recommendation-v2
+
+    - pause:
+        prompt: "==================== Mudando todos os usuários para a versão 2 de Recommendation"
+
+    - name: Criando regra no istio de mudança para recommendation-v2
+      shell: istioctl create -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra recommendation-v1-v2 ja existe"
+
+    - name: Criando serviço recommendation-v2
+      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v2.yml -n tutorial | echo "servico-v2 ja existe"
+
+    - pause:
+        prompt: "while [ true ]; do curl http://customer-tutorial.{{ ocp_url }}/; sleep 1; echo; done"
+
+    - pause:
+        prompt: "==================== Mudando todos os usuários para a versão 1 de Recommendation"
+
+    - name: Sobrescrevendo regra no istio de mudança para a versao 1
+      shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "regra-v1 nao encontrada"
+
+    - pause:
+        prompt: "while [ true ]; do curl http://customer-tutorial.{{ ocp_url }}/; sleep 1; echo; done"
+
+    - pause:
+        prompt: "==================== Mudando os usuários para versão 1 e versão 2 novamente"
+
+    - name: Removendo a regra de roteamento
+      shell: istioctl delete -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "recommendation-v1 nao encontrada"
+
+    - pause:
+        prompt: "==================== Canary Release ( 90% -> v1  -  10% -> v2 )"
+
+    - name: Removendo serviço v2
+      shell: oc scale --replicas=0 dc/recommendation-v2
+
+    - name: Criando regra recommendation-v2
+      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2.yml -n tutorial | echo "regra-v2 ja existe"
+
+    - name: Habilitando serviço v2
+      shell: oc scale --replicas=1 dc/recommendation-v2
+
+    - pause:
+        prompt: "while [ true ]; do curl http://customer-tutorial.{{ ocp_url }}/; sleep 1; echo; done"
+
+    - pause:
+        prompt: "==================== Canary Release ( 75% -> v1  -  25% -> v2 )"
+
+    - name: Criando regra recommendation-v2
+      shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2_75_25.yml -n tutorial | echo "regra-v2 ja existe"
+
+    - pause:
+        prompt: "while [ true ]; do curl http://customer-tutorial.{{ ocp_url }}/; sleep 1; echo; done"
+
+    - pause:
+        prompt: "==================== Removendo regras"
+
+    - name: Removendo regra recommendation-v2
+      shell: istioctl delete -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2_75_25.yml -n tutorial | echo "regra-v2 ja existe"
+
+    - name: Removendo destino recommendation-v2
+      shell: istioctl delete -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra-v2 ja existe"
+
+    - name: Clean-up
+      shell: ./istio-tutorial/scripts/clean.sh
+
+    - pause:
+        prompt: "==================== Smart Routing baseado no User-Agent (Canary Deployment) baseado no browser - Firefox = v1, Safari = v2"
+
+    - name: Criando regra - recommendation v1 para todos os usuarios"
+      shell: istioctl create -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra-v1-v2 ja existe"
+
+    - name: Criando virtual service recommendation-v1
+      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "service-v1 ja existe"
+
+    - name: Criando regra Safari Users para recommendation-v2
+      shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-safari-recommendation-v2.yml -n tutorial | echo "regra-v2 ja existe"
+
+    - pause:
+        prompt: "curl -A Safari customer-tutorial.{{ ocp_url }}\n \
+                 curl -A Firefox customer-tutorial.{{ ocp_url }}"
+
+    - pause:
+        prompt: "==================== Configurando usuários mobile para a versão 2"
+
+    - name: Removendo regra do Safari
+      shell: istioctl delete -f istio-tutorial/istiofiles/virtual-service-safari-recommendation-v2.yml -n tutorial
+
+    - name: Criando regra mobile para versão 2
+      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-mobile-recommendation-v2.yml -n tutorial
+
+    - pause:
+        prompt: curl -A "Mozilla/5.0 (iPhone; U; CPU iPhone OS 4(KHTML, like Gecko) Version/5.0.2 Mobile/8J2 Safari/6533.18.5" customer-tutorial.{{ ocp_url }}
+
+    - name: Clean-up
+      shell: ./istio-tutorial/scripts/clean.sh
+
+
+
+    - pause:
+        prompt: "==================== Controle de acesso baseado em whitelist, preference somente recebe requisições de recommendation (requests de customer dá erro 404)"
+
+    - name: Criando regra whitelist
+      shell: istioctl create -f istio-tutorial/istiofiles/acl-whitelist.yml -n tutorial
+
+    - pause:
+        prompt: "curl customer-tutorial.{{ ocp_url }}"
+
+    - pause:
+        prompt: "==================== Controle de acesso baseado em blacklist, customer vai estar na blacklist de recommendation (requests de customer dá erro 403)"
+
+    - name: Removendo regra whitelist
+      shell: istioctl delete -f istio-tutorial/istiofiles/acl-whitelist.yml -n tutorial
+
+    - name: Criando regra blacklist
+      shell: istioctl create -f istio-tutorial/istiofiles/acl-blacklist.yml -n tutorial
+
+    - pause:
+        prompt: "curl customer-tutorial.{{ ocp_url }}"
+
+    - name: Removendo regra blacklist
+      shell: istioctl delete -f istio-tutorial/istiofiles/acl-blacklist.yml -n tutorial
+
+    - pause:
+        prompt: "==================== Rate Limiting - Limitando a quantidade de acessos concorrentes"
+
+    - name: Criando limit handler
+      shell: istioctl create -f istio-tutorial/istiofiles/recommendation_rate_limit_handler.yml
+
+    - name: Criando regra de cota
+      shell: istioctl create -f istio-tutorial/istiofiles/rate_limit_rule.yml
+
+    - pause:
+        prompt: "./istio-tutorial/scripts/run.sh"
+
+    - name: Removendo limit rule
+      shell: istioctl delete -f istio-tutorial/istiofiles/rate_limit_rule.yml
+
+    - name: Removendo limit handler
+      shell: istioctl delete -f istio-tutorial/istiofiles/recommendation_rate_limit_handler.yml
+
+    - name: Clean-up
+      shell: ./istio-tutorial/scripts/clean.sh
+
+
+
+    
+
+
+
