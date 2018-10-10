@@ -4,9 +4,16 @@
   connection: local
   vars:
     ocp_url: apps.brasilia1.openshiftworkshop.com
+    master_url: master.brasilia1.openshiftworkshop.com
 
   tasks:
 
+    - name: ATENCAO = Testar mvn e istioctl no path
+      shell: echo ""
+
+    - name: Abrindo console Openshift
+      shell: open "https://{{ master_url }}"
+   
     - name: Abrindo URL Grafana
       shell: open "http://grafana-istio-system.{{ ocp_url }}/d/1/istio-dashboard?refresh=5s&orgId=1"
 
@@ -47,6 +54,9 @@
     - pause:
         prompt: "====================  Deploy de nova versão Recommendation-V2"
 
+    - name: Mudando para o projeto tutorial
+      shell: oc project tutorial
+
     - name: Alterando RecommendationVerticle.java para nova versão
       shell: sed -i -e 's/recommendation v1/recommendation v2/g' istio-tutorial/recommendation/java/vertx/src/main/java/com/redhat/developer/demos/recommendation/RecommendationVerticle.java
 
@@ -62,7 +72,7 @@
     - name: Cancelando build v2
       shell: oc cancel-build bc/recommendation-v2
 
-    - name: Deletando build v2
+    - name: Deletando service v2
       shell: oc delete svc/recommendation-v2
 
     - name: Iniciando build v2 a partir do binário
@@ -190,54 +200,137 @@
 
 
 
-    - pause:
-        prompt: "==================== Controle de acesso baseado em whitelist, preference somente recebe requisições de recommendation (requests de customer dá erro 404)"
+#    - pause:
+#        prompt: "==================== Controle de acesso baseado em whitelist, preference somente recebe requisições de recommendation (requests de customer dá erro 404)"
 
-    - name: Criando regra whitelist
-      shell: istioctl create -f istio-tutorial/istiofiles/acl-whitelist.yml -n tutorial
+#    - name: Criando regra whitelist
+#      shell: istioctl create -f istio-tutorial/istiofiles/acl-whitelist.yml -n tutorial
+
+#    - pause:
+#        prompt: "curl customer-tutorial.{{ ocp_url }}"
+
+#    - pause:
+#        prompt: "==================== Controle de acesso baseado em blacklist, customer vai estar na blacklist de recommendation (requests de customer dá erro 403)"
+
+#    - name: Removendo regra whitelist
+#      shell: istioctl delete -f istio-tutorial/istiofiles/acl-whitelist.yml -n tutorial
+
+#    - name: Criando regra blacklist
+#      shell: istioctl create -f istio-tutorial/istiofiles/acl-blacklist.yml -n tutorial
+
+#    - pause:
+#        prompt: "curl customer-tutorial.{{ ocp_url }}"
+
+#    - name: Removendo regra blacklist
+#      shell: istioctl delete -f istio-tutorial/istiofiles/acl-blacklist.yml -n tutorial
+
+#    - pause:
+#        prompt: "==================== Rate Limiting - Limitando a quantidade de acessos concorrentes"
+
+#    - pause:
+#        prompt: "Teste sem Rate Limit"
+
+#    - pause:
+#        prompt: "./istio-tutorial/scripts/run-cloud.sh"
+
+#    - name: Criando limit handler
+#      shell: istioctl create -f istio-tutorial/istiofiles/recommendation_rate_limit_handler.yml
+
+#    - name: Criando regra de cota
+#      shell: istioctl create -f istio-tutorial/istiofiles/rate_limit_rule.yml
+
+#    - pause:
+#        prompt: "Teste com Rate Limit"
+
+#    - pause:
+#        prompt: "./istio-tutorial/scripts/run-cloud.sh"
+
+#    - name: Removendo limit rule
+#      shell: istioctl delete -f istio-tutorial/istiofiles/rate_limit_rule.yml
+
+#    - name: Removendo limit handler
+#      shell: istioctl delete -f istio-tutorial/istiofiles/recommendation_rate_limit_handler.yml
+
+    - name: Clean-up
+      shell: ./istio-tutorial/scripts/clean.sh
+
+
+    - pause:
+        prompt: "====================  Circuit Breaking"
+
+    - name: Alterando RecommendationVerticle.java para habilitar handler de timeout
+      shell: sed -i -e 's/\/\/        router.get("\/").handler(this::timeout);/        router.get("\/").handler(this::timeout);/g' istio-tutorial/recommendation/java/vertx/src/main/java/com/redhat/developer/demos/recommendation/RecommendationVerticle.java
+
+    - name: Compilando o sistema recommendation
+      shell: cd istio-tutorial;mvn clean package -f recommendation/java/vertx
+
+#    - name: Criando aplicação recommendation v2
+#      shell: oc new-app -l app=recommendation,version=v2 --name=recommendation-v2 --context-dir=recommendation/java/vertx -e JAEGER_SERVICE_NAME=recommendation JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > recommendation-v2.yml
+
+#    - name: Gerando nova versão do projeto recommendation
+#      shell: istioctl kube-inject -f recommendation-v2.yml | oc apply -f -
+
+#    - name: Cancelando build v2
+#      shell: oc cancel-build bc/recommendation-v2
+
+#    - name: Deletando service v2
+#      shell: oc delete svc/recommendation-v2
+
+    - name: Iniciando build v2 a partir do binário
+      shell: cd istio-tutorial; oc start-build recommendation-v2 --from-dir=. --follow
+
+    - name: Criando destination rule
+      shell: istioctl create -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial
+
+    - name: Criando virtual service
+      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2_50_50.yml -n tutorial
+
+    - pause:
+        prompt: "SEM circuit breaking -  siege -r 2 -c 20 -v customer-tutorial.{{ ocp_url }}"
+
+    - name: Criando regra de recommendation com circuit breaking
+      shell: istioctl replace -f istio-tutorial/istiofiles/destination-rule-recommendation_cb_policy_version_v2.yml -n tutorial
+
+    - name: Criando virtual service
+      shell: istioctl get destinationrule -n tutorial
+
+    - pause:
+        prompt: "COM circuit breaking -  siege -r 2 -c 20 -v customer-tutorial.{{ ocp_url }}"
+
+    - name: Removendo virtual service
+      shell: istioctl delete virtualservice recommendation -n tutorial
+
+    - name: Removendo regra
+      shell: istioctl delete -f istio-tutorial/istiofiles/destination-rule-recommendation_cb_policy_version_v2.yml -n tutorial
+
+    - name: Clean-up
+      shell: ./istio-tutorial/scripts/clean.sh
+
+
+    - pause:
+        prompt: "====================  Fault Injection - HTTP 503"
+
+    - name: Criando destination rule
+      shell: istioctl create -f istio-tutorial/istiofiles/destination-rule-recommendation.yml -n tutorial
+
+    - name: Criando virtual service 503
+      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-503.yml -n tutorial
 
     - pause:
         prompt: "curl customer-tutorial.{{ ocp_url }}"
 
-    - pause:
-        prompt: "==================== Controle de acesso baseado em blacklist, customer vai estar na blacklist de recommendation (requests de customer dá erro 403)"
-
-    - name: Removendo regra whitelist
-      shell: istioctl delete -f istio-tutorial/istiofiles/acl-whitelist.yml -n tutorial
-
-    - name: Criando regra blacklist
-      shell: istioctl create -f istio-tutorial/istiofiles/acl-blacklist.yml -n tutorial
-
-    - pause:
-        prompt: "curl customer-tutorial.{{ ocp_url }}"
-
-    - name: Removendo regra blacklist
-      shell: istioctl delete -f istio-tutorial/istiofiles/acl-blacklist.yml -n tutorial
-
-    - pause:
-        prompt: "==================== Rate Limiting - Limitando a quantidade de acessos concorrentes"
-
-    - name: Criando limit handler
-      shell: istioctl create -f istio-tutorial/istiofiles/recommendation_rate_limit_handler.yml
-
-    - name: Criando regra de cota
-      shell: istioctl create -f istio-tutorial/istiofiles/rate_limit_rule.yml
-
-    - pause:
-        prompt: "./istio-tutorial/scripts/run.sh"
-
-    - name: Removendo limit rule
-      shell: istioctl delete -f istio-tutorial/istiofiles/rate_limit_rule.yml
-
-    - name: Removendo limit handler
-      shell: istioctl delete -f istio-tutorial/istiofiles/recommendation_rate_limit_handler.yml
+    - name: Criando virtual service 503
+      shell: istioctl delete -f istio-tutorial/istiofiles/virtual-service-recommendation-503.yml -n tutorial
 
     - name: Clean-up
       shell: ./istio-tutorial/scripts/clean.sh
 
 
 
-    
+
+
+
+
 
 
 
