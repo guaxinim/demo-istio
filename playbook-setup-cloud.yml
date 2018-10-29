@@ -12,7 +12,7 @@
       shell: oc apply -f istio-1.0.0/install/kubernetes/helm/istio/templates/crds.yaml
 
     - name: Abrindo projeto istio-system
-       shell: oc new-project tutorial
+      shell: oc new-project tutorial
 
     - name: Instalando istio-demo.yaml
       shell: oc apply -f istio-1.0.0/install/kubernetes/istio-demo.yaml
@@ -68,15 +68,15 @@
     - name: Expondo svc tracing
       shell: oc expose svc tracing
 
-#    - name: Aguardando containers do istio
-#      shell: oc get po | grep Running | wc -l
-#      register: istio_containers
-#      until: istio_containers.stdout.find("17") != -1
-#      retries: 60
-#      delay: 20
+    - name: Aguardando containers do istio
+      shell: oc get po | grep Running | wc -l
+      register: istio_containers
+      until: istio_containers.stdout.find("17") != -1
+      retries: 60
+      delay: 20
 
-#    - name: Download do Istio for OSX
-#      shell: curl -L https://github.com/istio/istio/releases/download/1.0.0/istio-1.0.0-osx.tar.gz | tar xz
+    - name: Download do Istio for OSX
+      shell: curl -L https://github.com/istio/istio/releases/download/1.0.0/istio-1.0.0-osx.tar.gz | tar xz
 
     - name: New project tutorial
       shell: oc project tutorial
