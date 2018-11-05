@@ -2,7 +2,7 @@
 
 ## This demo is based on istio-tutorial available at https://github.com/redhat-developer-demos/istio-tutorial/tree/1.0.
 
-## There 2 versions of playbooks to setup and run demo.
+## There are 2 versions of playbooks to setup and run demo.
 * Local (minishift)
 * Remote cluster
 
