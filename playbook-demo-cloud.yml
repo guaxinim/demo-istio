@@ -3,12 +3,12 @@
   name: "Execução da Demo do Istio"
   connection: local
   vars:
-    ocp_url: apps.brasilia1.openshiftworkshop.com
-    master_url: master.brasilia1.openshiftworkshop.com
+    ocp_url: apps.brasilia.openshiftworkshop.com
+    master_url: master.brasilia.openshiftworkshop.com
 
   tasks:
 
-    - name: ATENCAO = Testar mvn e istioctl no path
+    - name: ATENCAO = Configurar mvn e istioctl no PATH antes da execução da demo
       shell: echo ""
 
     - name: Abrindo console Openshift
@@ -319,7 +319,7 @@
     - pause:
         prompt: "curl customer-tutorial.{{ ocp_url }}"
 
-    - name: Criando virtual service 503
+    - name: Removendo virtual service 503
       shell: istioctl delete -f istio-tutorial/istiofiles/virtual-service-recommendation-503.yml -n tutorial
 
     - name: Clean-up

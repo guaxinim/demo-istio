@@ -5,6 +5,9 @@
 
   tasks:
 
+    - name: ATENCAO = Configurar mvn e istioctl no PATH antes da execução da demo
+      shell: echo ""
+
     - name: Abrindo URL Grafana
       shell: open "$(minishift openshift service grafana -u)/d/1/istio-dashboard?refresh=5s&orgId=1"
 
@@ -35,6 +38,9 @@
 
     - name: Abrindo Jaeger
       shell: minishift openshift service tracing --in-browser
+
+    - pause:
+        prompt: "curl customer-tutorial.$(minishift ip).nip.io"
 
     - pause:
         prompt: "====================  Deploy de nova versão Recommendation-V2"
@@ -75,7 +81,7 @@
       delay: 2
 
     - pause:
-        prompt: "while [ true ]; do curl http://customer-tutorial.$(minishift ip).nip.io/; sleep 1.5; echo; done"
+        prompt: "while [ true ]; do curl http://customer-tutorial.$(minishift ip).nip.io/; sleep 1; echo; done"
 
     - name: Escalando recommendation-v2 para 2 replicas
       shell: oc scale --replicas=2 dc/recommendation-v2
@@ -87,7 +93,7 @@
       shell: oc scale --replicas=1 dc/recommendation-v2
 
     - pause:
-        prompt: "Mudando todos os usuários para a versão 2 de Recommendation"
+        prompt: "==================== Mudando todos os usuários para a versão 2 de Recommendation"
 
     - name: Criando regra no istio de mudança para recommendation-v2
       shell: istioctl create -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra recommendation-v1-v2 ja existe"
@@ -96,22 +102,28 @@
       shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v2.yml -n tutorial | echo "servico-v2 ja existe"
 
     - pause:
-        prompt: "Mudando todos os usuários para a versão 1 de Recommendation"
+        prompt: "while [ true ]; do curl http://customer-tutorial.$(minishift ip).nip.io/; sleep 1; echo; done"
+
+    - pause:
+        prompt: "==================== Mudando todos os usuários para a versão 1 de Recommendation"
 
     - name: Sobrescrevendo regra no istio de mudança para a versao 1
       shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "regra-v1 nao encontrada"
 
     - pause:
-        prompt: "Mudando os usuários para versão 1 e versão 2"
+        prompt: "while [ true ]; do curl http://customer-tutorial.$(minishift ip).nip.io/; sleep 1; echo; done"
+
+    - pause:
+        prompt: "==================== Mudando os usuários para versão 1 e versão 2 novamente"
 
     - name: Removendo a regra de roteamento
       shell: istioctl delete -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "recommendation-v1 nao encontrada"
 
+    - pause:
+        prompt: "==================== Canary Release ( 90% -> v1  -  10% -> v2 )"
+
     - name: Removendo serviço v2
       shell: oc scale --replicas=0 dc/recommendation-v2
-
-    - pause:
-        prompt: "Canary Release ( 90% -> v1  -  10% -> v2 )"
 
     - name: Criando regra recommendation-v2
       shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2.yml -n tutorial | echo "regra-v2 ja existe"
@@ -120,22 +132,110 @@
       shell: oc scale --replicas=1 dc/recommendation-v2
 
     - pause:
-        prompt: "Canary Release ( 75% -> v1  -  25% -> v2 )"
+        prompt: "while [ true ]; do curl http://customer-tutorial.$(minishift ip).nip.io/; sleep 1; echo; done"
+
+    - pause:
+        prompt: "==================== Canary Release ( 75% -> v1  -  25% -> v2 )"
 
     - name: Criando regra recommendation-v2
       shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2_75_25.yml -n tutorial | echo "regra-v2 ja existe"
 
     - pause:
-        prompt: "Removendo regras"
+        prompt: "while [ true ]; do curl http://customer-tutorial.$(minishift ip).nip.io/; sleep 1; echo; done"
+
+    - pause:
+        prompt: "==================== Removendo regras"
 
     - name: Removendo regra recommendation-v2
-      shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2_75_25.yml -n tutorial | echo "regra-v2 ja existe"
+      shell: istioctl delete -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2_75_25.yml -n tutorial | echo "regra-v2 ja existe"
 
     - name: Removendo destino recommendation-v2
-      shell: istioctl replace -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra-v2 ja existe"
+      shell: istioctl delete -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra-v2 ja existe"
 
     - name: Clean-up
       shell: ./istio-tutorial/scripts/clean.sh
+
+    - pause:
+        prompt: "==================== Smart Routing baseado no User-Agent (Canary Deployment) baseado no browser - Firefox = v1, Safari = v2"
+
+    - name: Criando regra - recommendation v1 para todos os usuarios"
+      shell: istioctl create -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra-v1-v2 ja existe"
+
+    - name: Criando virtual service recommendation-v1
+      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "service-v1 ja existe"
+
+    - name: Criando regra Safari Users para recommendation-v2
+      shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-safari-recommendation-v2.yml -n tutorial | echo "regra-v2 ja existe"
+
+    - pause:
+        prompt: "curl -A Safari customer-tutorial.$(minishift ip).nip.io\n \
+                 curl -A Firefox customer-tutorial.$(minishift ip).nip.io"
+
+    - pause:
+        prompt: "==================== Configurando usuários mobile para a versão 2"
+
+    - name: Removendo regra do Safari
+      shell: istioctl delete -f istio-tutorial/istiofiles/virtual-service-safari-recommendation-v2.yml -n tutorial
+
+    - name: Criando regra mobile para versão 2
+      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-mobile-recommendation-v2.yml -n tutorial
+
+    - pause:
+        prompt: curl -A "Mozilla/5.0 (iPhone; U; CPU iPhone OS 4(KHTML, like Gecko) Version/5.0.2 Mobile/8J2 Safari/6533.18.5" customer-tutorial.$(minishift ip).nip.io
+
+    - name: Clean-up
+      shell: ./istio-tutorial/scripts/clean.sh
+
+
+
+    - pause:
+        prompt: "==================== Controle de acesso baseado em whitelist, preference somente recebe requisições de recommendation (requests de customer dá erro 404)"
+
+    - name: Criando regra whitelist
+      shell: istioctl create -f istio-tutorial/istiofiles/acl-whitelist.yml -n tutorial
+
+    - pause:
+        prompt: "curl customer-tutorial.$(minishift ip).nip.io"
+
+    - pause:
+        prompt: "==================== Controle de acesso baseado em blacklist, customer vai estar na blacklist de recommendation (requests de customer dá erro 403)"
+
+    - name: Removendo regra whitelist
+      shell: istioctl delete -f istio-tutorial/istiofiles/acl-whitelist.yml -n tutorial
+
+    - name: Criando regra blacklist
+      shell: istioctl create -f istio-tutorial/istiofiles/acl-blacklist.yml -n tutorial
+
+    - pause:
+        prompt: "curl customer-tutorial.$(minishift ip).nip.io"
+
+    - name: Removendo regra blacklist
+      shell: istioctl delete -f istio-tutorial/istiofiles/acl-blacklist.yml -n tutorial
+
+    - pause:
+        prompt: "==================== Rate Limiting - Limitando a quantidade de acessos concorrentes"
+
+    - name: Criando limit handler
+      shell: istioctl create -f istio-tutorial/istiofiles/recommendation_rate_limit_handler.yml
+
+    - name: Criando regra de cota
+      shell: istioctl create -f istio-tutorial/istiofiles/rate_limit_rule.yml
+
+    - pause:
+        prompt: "./istio-tutorial/scripts/run.sh"
+
+    - name: Removendo limit rule
+      shell: istioctl delete -f istio-tutorial/istiofiles/rate_limit_rule.yml
+
+    - name: Removendo limit handler
+      shell: istioctl delete -f istio-tutorial/istiofiles/recommendation_rate_limit_handler.yml
+
+    - name: Clean-up
+      shell: ./istio-tutorial/scripts/clean.sh
+
+
+
+    
 
 
 
