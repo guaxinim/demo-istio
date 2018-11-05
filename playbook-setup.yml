@@ -5,6 +5,7 @@
   vars:
     ocp_url: master.brasilia.openshiftworkshop.com
     istio_version: 1.0.3
+    kiali_version: v0.9.1
 
   tasks:
 
@@ -167,11 +168,11 @@
       shell: oc project istio-system
 
     - name: Criando kiali config-map
-      shell: curl https://raw.githubusercontent.com/kiali/kiali/v0.7.2/deploy/openshift/kiali-configmap.yaml | VERSION_LABEL=v0.7.2 JAEGER_URL=https://jaeger-query-istio-system.$(minishift ip).nip.io GRAFANA_URL=https://grafana-istio-system.$(minishift ip).nip.io envsubst | oc create -n istio-system -f -
+      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali-configmap.yaml | VERSION_LABEL={{ kiali_version }} JAEGER_URL=https://jaeger-query-istio-system.$(minishift ip).nip.io GRAFANA_URL=https://grafana-istio-system.$(minishift ip).nip.io envsubst | oc create -n istio-system -f -"
 
     - name: Criando kiali secrets
-      shell: curl https://raw.githubusercontent.com/kiali/kiali/v0.7.2/deploy/openshift/kiali-secrets.yaml | VERSION_LABEL=v0.7.2 envsubst | oc create -n istio-system -f -
+      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali-secrets.yaml | VERSION_LABEL={{ kiali_version }} envsubst | oc create -n istio-system -f -"
 
     - name: Criando kiali
-      shell: "curl https://raw.githubusercontent.com/kiali/kiali/v0.7.2/deploy/openshift/kiali.yaml | VERSION_LABEL=v0.7.2 IMAGE_NAME=kiali/kiali IMAGE_VERSION=v0.7.2 NAMESPACE=istio-system VERBOSE_MODE=4 IMAGE_PULL_POLICY_TOKEN='imagePullPolicy: Always' envsubst | oc create -n istio-system -f - "
+      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali.yaml | VERSION_LABEL={{ kiali_version }} IMAGE_NAME=kiali/kiali IMAGE_VERSION={{ kiali_version }} NAMESPACE=istio-system VERBOSE_MODE=4 IMAGE_PULL_POLICY_TOKEN='imagePullPolicy: Always' envsubst | oc create -n istio-system -f - "
 
