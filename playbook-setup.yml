@@ -10,24 +10,22 @@
     - name: Configurando Minishift profile Istio
       shell: minishift profile set istio-work
 
-    - name: Configurando Minishift 8GB
-      shell: minishift config set memory 8GB
+    - name: Configurando Minishift 8GB, 3 CPUs and image caching
+      shell: "minishift config set {{ item }}"
+      with_items:
+        - "memory 8GB"
+        - "cpus 3"
+        - "image-caching true"
 
-    - name: Configurando Minishift 3 CPUs
-      shell: minishift config set cpus 3
-
-    - name: Configurando Minishift driver xhyve
+    - name: Configurando Minishift driver xhyve for MacOSX
       shell: minishift config set vm-driver xhyve
       when: ansible_distribution == "MacOSX"
 
-    - name: Configurando Minishift image caching
-      shell: minishift config set image-caching true
-
-    - name: Configurando Minishift admin-user
-      shell: minishift addon enable admin-user
-
-    - name: Configurando Minishift anyuid
-      shell: minishift addon enable anyuid
+    - name: Configurando Minishift addons
+      shell: "minishift addon enable {{ item }}"
+      with_items:
+        - admin-user
+        - anyuid
 
     - name: Iniciando minishift...
       shell: MINISHIFT_ENABLE_EXPERIMENTAL=y minishift start --extra-clusterup-flags "--metrics"
@@ -47,20 +45,14 @@
     - name: Criando projeto istio-system
       shell: oc project istio-system
 
-    - name: Expondo svc istio-ingressgateway 
-      shell: oc expose svc istio-ingressgateway
-
-    - name: Expondo svc servicegraph
-      shell: oc expose svc servicegraph
-
-    - name: Expondo svc grafana
-      shell: oc expose svc grafana
-
-    - name: Expondo svc prometheus
-      shell: oc expose svc prometheus
-
-    - name: Expondo svc tracing
-      shell: oc expose svc tracing
+    - name: Expondo istio services 
+      shell: "oc expose svc {{ item }}"
+      with_items:
+        - istio-ingressgateway
+        - servicegraph
+        - grafana
+        - prometheus
+        - tracing
 
     - name: Aguardando containers do istio
       shell: oc get po | grep Running | wc -l
