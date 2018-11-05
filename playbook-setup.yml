@@ -4,6 +4,7 @@
   connection: local
   vars:
     ocp_url: master.brasilia.openshiftworkshop.com
+    istio_version: 1.0.3
 
   tasks:
 
@@ -34,13 +35,18 @@
       shell: oc login $(minishift ip):8443 -u admin -p admin
 
     - name: Download do Istio for OSX
-      shell: curl -L https://github.com/istio/istio/releases/download/1.0.0/istio-1.0.0-osx.tar.gz | tar xz
+      shell: "curl -L https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-osx.tar.gz | tar xz"
+      when: ansible_distribution == "MacOSX"
+    
+    - name: Download do Istio for Linux
+      shell: "curl -L https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-1.0.3-linux.tar.gz | tar xz"
+      when: ansible_distribution != "MacOSX"
 
     - name: Instalando crds.yaml
-      shell: oc apply -f istio-1.0.0/install/kubernetes/helm/istio/templates/crds.yaml
+      shell: "oc apply -f istio-{{ istio_version }}/install/kubernetes/helm/istio/templates/crds.yaml"
 
     - name: Instalando istio-demo.yaml
-      shell: oc apply -f istio-1.0.0/install/kubernetes/istio-demo.yaml
+      shell: "oc apply -f istio-{{ istio_version }}/install/kubernetes/istio-demo.yaml"
 
     - name: Criando projeto istio-system
       shell: oc project istio-system
@@ -74,13 +80,13 @@
       shell: oc new-app --name=customer --context-dir=customer/java/springboot -e JAEGER_SERVICE_NAME=customer JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > customer.yml
 
 #    - name: Exportando ISTIO_HOME
-#      shell: export ISTIO_HOME=`pwd`/istio-1.0.0/bin
+#      shell: export ISTIO_HOME=`pwd`/istio-{{ istio_version }}/bin
 
 #    - name: Exportando PATH
 #      shell: export PATH=$ISTIO_HOME/bin:$PATH
 
     - name: Criando objetos a partir do template Customer
-      shell: ./istio-1.0.0/bin/istioctl kube-inject -f customer.yml | oc apply -f -
+      shell: "./istio-{{ istio_version }}/bin/istioctl kube-inject -f customer.yml | oc apply -f -"
 
     - name: Expondo servico customer
       shell: oc delete svc/customer
@@ -109,7 +115,7 @@
       shell: oc new-app -l app=preference,version=v1 --name=preference-v1 --context-dir=preference/java/springboot -e JAEGER_SERVICE_NAME=preference JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > preference.yml
 
     - name: Criando objetos a partir do template preference
-      shell: ./istio-1.0.0/bin/istioctl kube-inject -f preference.yml | oc apply -f -
+      shell: "./istio-{{ istio_version }}/bin/istioctl kube-inject -f preference.yml | oc apply -f -"
 
     - name: Expondo servico preference
       shell: oc delete svc/preference-v1
@@ -135,7 +141,7 @@
       shell: oc new-app -l app=recommendation,version=v1 --name=recommendation-v1 --context-dir=recommendation/java/vertx JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > recommendation.yml
 
     - name: Criando objetos a partir do template recommendation
-      shell: ./istio-1.0.0/bin/istioctl kube-inject -f recommendation.yml | oc apply -f -
+      shell: "./istio-{{ istio_version }}/bin/istioctl kube-inject -f recommendation.yml | oc apply -f -"
 
     - name: Expondo servico recommendation
       shell: oc delete svc/recommendation-v1
