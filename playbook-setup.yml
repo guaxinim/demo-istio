@@ -7,7 +7,6 @@
 
   tasks:
 
-
     - name: Configurando Minishift profile Istio
       shell: minishift profile set istio-work
 
@@ -19,6 +18,7 @@
 
     - name: Configurando Minishift driver xhyve
       shell: minishift config set vm-driver xhyve
+      when: ansible_distribution == "MacOSX"
 
     - name: Configurando Minishift image caching
       shell: minishift config set image-caching true
