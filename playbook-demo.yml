@@ -2,6 +2,9 @@
 - hosts: localhost
   name: "Execução da Demo do Istio"
   connection: local
+  vars:
+    istio_version: 1.0.3
+    kiali_version: v0.9.1
 
   tasks:
 
@@ -17,14 +20,8 @@
     - name: Abrindo métricas customizadas
       shell: open "$(minishift openshift service prometheus -u)/graph?g0.range_input=5m&g0.expr=&g0.tab=0"
 
-    - name: Exportando ISTIO_HOME
-      shell: export ISTIO_HOME=`pwd`/istio-1.0.0/bin
-
-    - name: Exportando PATH
-      shell: export PATH=$ISTIO_HOME/bin:$PATH
-
     - name: Criando recommendation request no istio
-      shell: istioctl create -f istio-tutorial/istiofiles/recommendation_requestcount.yml -n istio-system | echo "RequestCount ja existe"
+      shell: ./istio-{{ istio_version }}/bin/istioctl create -f istio-tutorial/istiofiles/recommendation_requestcount.yml -n istio-system | echo "RequestCount ja existe"
 
     - pause:
         prompt: istio_requests_total{destination_service="recommendation.tutorial.svc.cluster.local"}
@@ -55,7 +52,7 @@
       shell: oc new-app -l app=recommendation,version=v2 --name=recommendation-v2 --context-dir=recommendation/java/vertx -e JAEGER_SERVICE_NAME=recommendation JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > recommendation-v2.yml
 
     - name: Gerando nova versão do projeto recommendation
-      shell: istioctl kube-inject -f recommendation-v2.yml | oc apply -f -
+      shell: ./istio-{{ istio_version }}/bin/istioctl kube-inject -f recommendation-v2.yml | oc apply -f -
 
     - name: Cancelando build v2
       shell: oc cancel-build bc/recommendation-v2
@@ -96,10 +93,10 @@
         prompt: "==================== Mudando todos os usuários para a versão 2 de Recommendation"
 
     - name: Criando regra no istio de mudança para recommendation-v2
-      shell: istioctl create -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra recommendation-v1-v2 ja existe"
+      shell: ./istio-{{ istio_version }}/bin/istioctl create -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra recommendation-v1-v2 ja existe"
 
     - name: Criando serviço recommendation-v2
-      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v2.yml -n tutorial | echo "servico-v2 ja existe"
+      shell: ./istio-{{ istio_version }}/bin/istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v2.yml -n tutorial | echo "servico-v2 ja existe"
 
     - pause:
         prompt: "while [ true ]; do curl http://customer-tutorial.$(minishift ip).nip.io/; sleep 1; echo; done"
@@ -108,7 +105,7 @@
         prompt: "==================== Mudando todos os usuários para a versão 1 de Recommendation"
 
     - name: Sobrescrevendo regra no istio de mudança para a versao 1
-      shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "regra-v1 nao encontrada"
+      shell: ./istio-{{ istio_version }}/bin/istioctl replace -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "regra-v1 nao encontrada"
 
     - pause:
         prompt: "while [ true ]; do curl http://customer-tutorial.$(minishift ip).nip.io/; sleep 1; echo; done"
@@ -117,7 +114,7 @@
         prompt: "==================== Mudando os usuários para versão 1 e versão 2 novamente"
 
     - name: Removendo a regra de roteamento
-      shell: istioctl delete -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "recommendation-v1 nao encontrada"
+      shell: ./istio-{{ istio_version }}/bin/istioctl delete -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "recommendation-v1 nao encontrada"
 
     - pause:
         prompt: "==================== Canary Release ( 90% -> v1  -  10% -> v2 )"
@@ -126,7 +123,7 @@
       shell: oc scale --replicas=0 dc/recommendation-v2
 
     - name: Criando regra recommendation-v2
-      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2.yml -n tutorial | echo "regra-v2 ja existe"
+      shell: ./istio-{{ istio_version }}/bin/istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2.yml -n tutorial | echo "regra-v2 ja existe"
 
     - name: Habilitando serviço v2
       shell: oc scale --replicas=1 dc/recommendation-v2
@@ -138,7 +135,7 @@
         prompt: "==================== Canary Release ( 75% -> v1  -  25% -> v2 )"
 
     - name: Criando regra recommendation-v2
-      shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2_75_25.yml -n tutorial | echo "regra-v2 ja existe"
+      shell: ./istio-{{ istio_version }}/bin/istioctl replace -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2_75_25.yml -n tutorial | echo "regra-v2 ja existe"
 
     - pause:
         prompt: "while [ true ]; do curl http://customer-tutorial.$(minishift ip).nip.io/; sleep 1; echo; done"
@@ -147,10 +144,10 @@
         prompt: "==================== Removendo regras"
 
     - name: Removendo regra recommendation-v2
-      shell: istioctl delete -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2_75_25.yml -n tutorial | echo "regra-v2 ja existe"
+      shell: ./istio-{{ istio_version }}/bin/istioctl delete -f istio-tutorial/istiofiles/virtual-service-recommendation-v1_and_v2_75_25.yml -n tutorial | echo "regra-v2 ja existe"
 
     - name: Removendo destino recommendation-v2
-      shell: istioctl delete -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra-v2 ja existe"
+      shell: ./istio-{{ istio_version }}/bin/istioctl delete -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra-v2 ja existe"
 
     - name: Clean-up
       shell: ./istio-tutorial/scripts/clean.sh
@@ -159,13 +156,13 @@
         prompt: "==================== Smart Routing baseado no User-Agent (Canary Deployment) baseado no browser - Firefox = v1, Safari = v2"
 
     - name: Criando regra - recommendation v1 para todos os usuarios"
-      shell: istioctl create -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra-v1-v2 ja existe"
+      shell: ./istio-{{ istio_version }}/bin/istioctl create -f istio-tutorial/istiofiles/destination-rule-recommendation-v1-v2.yml -n tutorial | echo "regra-v1-v2 ja existe"
 
     - name: Criando virtual service recommendation-v1
-      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "service-v1 ja existe"
+      shell: ./istio-{{ istio_version }}/bin/istioctl create -f istio-tutorial/istiofiles/virtual-service-recommendation-v1.yml -n tutorial | echo "service-v1 ja existe"
 
     - name: Criando regra Safari Users para recommendation-v2
-      shell: istioctl replace -f istio-tutorial/istiofiles/virtual-service-safari-recommendation-v2.yml -n tutorial | echo "regra-v2 ja existe"
+      shell: ./istio-{{ istio_version }}/bin/istioctl replace -f istio-tutorial/istiofiles/virtual-service-safari-recommendation-v2.yml -n tutorial | echo "regra-v2 ja existe"
 
     - pause:
         prompt: "curl -A Safari customer-tutorial.$(minishift ip).nip.io\n \
@@ -175,10 +172,10 @@
         prompt: "==================== Configurando usuários mobile para a versão 2"
 
     - name: Removendo regra do Safari
-      shell: istioctl delete -f istio-tutorial/istiofiles/virtual-service-safari-recommendation-v2.yml -n tutorial
+      shell: ./istio-{{ istio_version }}/bin/istioctl delete -f istio-tutorial/istiofiles/virtual-service-safari-recommendation-v2.yml -n tutorial
 
     - name: Criando regra mobile para versão 2
-      shell: istioctl create -f istio-tutorial/istiofiles/virtual-service-mobile-recommendation-v2.yml -n tutorial
+      shell: ./istio-{{ istio_version }}/bin/istioctl create -f istio-tutorial/istiofiles/virtual-service-mobile-recommendation-v2.yml -n tutorial
 
     - pause:
         prompt: curl -A "Mozilla/5.0 (iPhone; U; CPU iPhone OS 4(KHTML, like Gecko) Version/5.0.2 Mobile/8J2 Safari/6533.18.5" customer-tutorial.$(minishift ip).nip.io
@@ -192,7 +189,7 @@
         prompt: "==================== Controle de acesso baseado em whitelist, preference somente recebe requisições de recommendation (requests de customer dá erro 404)"
 
     - name: Criando regra whitelist
-      shell: istioctl create -f istio-tutorial/istiofiles/acl-whitelist.yml -n tutorial
+      shell: ./istio-{{ istio_version }}/bin/istioctl create -f istio-tutorial/istiofiles/acl-whitelist.yml -n tutorial
 
     - pause:
         prompt: "curl customer-tutorial.$(minishift ip).nip.io"
@@ -201,34 +198,34 @@
         prompt: "==================== Controle de acesso baseado em blacklist, customer vai estar na blacklist de recommendation (requests de customer dá erro 403)"
 
     - name: Removendo regra whitelist
-      shell: istioctl delete -f istio-tutorial/istiofiles/acl-whitelist.yml -n tutorial
+      shell: ./istio-{{ istio_version }}/bin/istioctl delete -f istio-tutorial/istiofiles/acl-whitelist.yml -n tutorial
 
     - name: Criando regra blacklist
-      shell: istioctl create -f istio-tutorial/istiofiles/acl-blacklist.yml -n tutorial
+      shell: ./istio-{{ istio_version }}/bin/istioctl create -f istio-tutorial/istiofiles/acl-blacklist.yml -n tutorial
 
     - pause:
         prompt: "curl customer-tutorial.$(minishift ip).nip.io"
 
     - name: Removendo regra blacklist
-      shell: istioctl delete -f istio-tutorial/istiofiles/acl-blacklist.yml -n tutorial
+      shell: ./istio-{{ istio_version }}/bin/istioctl delete -f istio-tutorial/istiofiles/acl-blacklist.yml -n tutorial
 
     - pause:
         prompt: "==================== Rate Limiting - Limitando a quantidade de acessos concorrentes"
 
     - name: Criando limit handler
-      shell: istioctl create -f istio-tutorial/istiofiles/recommendation_rate_limit_handler.yml
+      shell: ./istio-{{ istio_version }}/bin/istioctl create -f istio-tutorial/istiofiles/recommendation_rate_limit_handler.yml
 
     - name: Criando regra de cota
-      shell: istioctl create -f istio-tutorial/istiofiles/rate_limit_rule.yml
+      shell: ./istio-{{ istio_version }}/bin/istioctl create -f istio-tutorial/istiofiles/rate_limit_rule.yml
 
     - pause:
         prompt: "./istio-tutorial/scripts/run.sh"
 
     - name: Removendo limit rule
-      shell: istioctl delete -f istio-tutorial/istiofiles/rate_limit_rule.yml
+      shell: ./istio-{{ istio_version }}/bin/istioctl delete -f istio-tutorial/istiofiles/rate_limit_rule.yml
 
     - name: Removendo limit handler
-      shell: istioctl delete -f istio-tutorial/istiofiles/recommendation_rate_limit_handler.yml
+      shell: ./istio-{{ istio_version }}/bin/istioctl delete -f istio-tutorial/istiofiles/recommendation_rate_limit_handler.yml
 
     - name: Clean-up
       shell: ./istio-tutorial/scripts/clean.sh
