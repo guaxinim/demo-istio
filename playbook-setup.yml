@@ -3,7 +3,6 @@
   name: "Setup da Demo do Istio no Openshift"
   connection: local
   vars:
-    ocp_url: master.brasilia.openshiftworkshop.com
     istio_version: 1.0.3
     kiali_version: v0.9.1
 
@@ -38,15 +37,31 @@
     # - name: Download do Istio for OSX
     #   unarchive: 
     #     src: https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-osx.tar.gz
-    #     dest: 
+    #     dest: istio-1.0.3
     #     remote_src: yes
-    - name: Download do Istio for OSX
-      shell: "curl -L https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-osx.tar.gz | tar xz"
-      when: ansible_distribution == "MacOSX"
+
+    # - name: Download do Istio for OSX
+    #   shell: "curl -L https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-osx.tar.gz | tar xz"
+    #   when: ansible_distribution == "MacOSX"
     
+    - name: Download do Istio for OSX
+      get_url: 
+        url: https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-osx.tar.gz
+        dest: /tmp/istio.tar.gz
+      when: ansible_distribution == "MacOSX"
+
     - name: Download do Istio for Linux
-      shell: "curl -L https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-linux.tar.gz | tar xz"
+      get_url: 
+        url: https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-linux.tar.gz
+        dest: /tmp/istio.tar.gz
       when: ansible_distribution != "MacOSX"
+
+    - name: Extract istio
+      shell: tar -zxvf /tmp/istio.tar.gz -C istio-{{ istio_version }}
+
+    # - name: Download do Istio for Linux
+    #   shell: "curl -L https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-linux.tar.gz | tar xz"
+    #   when: ansible_distribution != "MacOSX"
 
     - name: Instalando crds.yaml
       shell: "oc apply -f istio-{{ istio_version }}/install/kubernetes/helm/istio/templates/crds.yaml"
@@ -67,9 +82,9 @@
         - tracing
 
     - name: Aguardando containers do istio
-      shell: oc get po -n istio-system | grep Running | wc -l
+      shell: test $(oc get po | grep Running | wc -l) -gt 11
       register: istio_containers
-      until: test $(oc get po | grep Running | wc -l) -gt 11
+      until: istio_containers.rc == 0
       retries: 60
       delay: 20
 
@@ -91,9 +106,6 @@
       shell: "./istio-{{ istio_version }}/bin/istioctl kube-inject -f customer.yml -n tutorial | oc apply -f -"
 
     - name: Expondo servico customer
-      shell: oc delete svc/customer -n tutorial
-
-    - name: Expondo servico customer
       shell: oc apply -f istio-tutorial/customer/kubernetes/Service.yml -n tutorial
 
     - name: Exponde servico customer
@@ -106,9 +118,6 @@
       shell: "./istio-{{ istio_version }}/bin/istioctl kube-inject -f preference.yml -n tutorial | oc apply -f -"
 
     - name: Expondo servico preference
-      shell: oc delete svc/preference-v1 -n tutorial
-
-    - name: Expondo servico preference
       shell: oc apply -f istio-tutorial/preference/kubernetes/Service.yml -n tutorial
 
     - name: Iniciando build projeto Recommendation
@@ -117,8 +126,8 @@
     - name: Criando objetos a partir do template recommendation
       shell: "./istio-{{ istio_version }}/bin/istioctl kube-inject -f recommendation.yml -n tutorial | oc apply -f -"
 
-    - name: Expondo servico recommendation
-      shell: oc delete svc/recommendation-v1 -n tutorial
+    #- name: Expondo servico recommendation
+    #  shell: oc delete svc/recommendation-v1 -n tutorial
 
     - name: Expondo servico recommendation
       shell: oc apply -f istio-tutorial/recommendation/kubernetes/Service.yml -n tutorial
