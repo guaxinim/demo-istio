@@ -30,17 +30,22 @@
         - anyuid
 
     - name: Iniciando minishift...
-      shell: MINISHIFT_ENABLE_EXPERIMENTAL=y minishift start --extra-clusterup-flags "--metrics"
+      shell: minishift --profile istio-work start
 
     - name: Openshift login com o usuário de sistema
       shell: oc login $(minishift ip):8443 -u admin -p admin
 
+    # - name: Download do Istio for OSX
+    #   unarchive: 
+    #     src: https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-osx.tar.gz
+    #     dest: 
+    #     remote_src: yes
     - name: Download do Istio for OSX
       shell: "curl -L https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-osx.tar.gz | tar xz"
       when: ansible_distribution == "MacOSX"
     
     - name: Download do Istio for Linux
-      shell: "curl -L https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-1.0.3-linux.tar.gz | tar xz"
+      shell: "curl -L https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-linux.tar.gz | tar xz"
       when: ansible_distribution != "MacOSX"
 
     - name: Instalando crds.yaml
@@ -53,7 +58,7 @@
       shell: oc project istio-system
 
     - name: Expondo istio services 
-      shell: "oc expose svc {{ item }}"
+      shell: "oc expose svc {{ item }} || echo 'Já existe'"
       with_items:
         - istio-ingressgateway
         - servicegraph
@@ -64,12 +69,12 @@
     - name: Aguardando containers do istio
       shell: oc get po | grep Running | wc -l
       register: istio_containers
-      until: istio_containers.stdout.find("13") != -1
+      until: istio_containers.stdout.find("12") != -1
       retries: 60
       delay: 20
 
     - name: New project tutorial
-      shell: oc new-project tutorial
+      shell: oc new-project tutorial || echo "já existe projeto"
 
     - name: Policy anyuid
       shell: oc adm policy add-scc-to-user privileged -z default -n tutorial
@@ -80,99 +85,65 @@
     - name: Iniciando build projeto Customer
       shell: oc new-app --name=customer --context-dir=customer/java/springboot -e JAEGER_SERVICE_NAME=customer JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > customer.yml
 
-#    - name: Exportando ISTIO_HOME
-#      shell: export ISTIO_HOME=`pwd`/istio-{{ istio_version }}/bin
-
-#    - name: Exportando PATH
-#      shell: export PATH=$ISTIO_HOME/bin:$PATH
-
     - name: Criando objetos a partir do template Customer
       shell: "./istio-{{ istio_version }}/bin/istioctl kube-inject -f customer.yml | oc apply -f -"
 
     - name: Expondo servico customer
-      shell: oc delete svc/customer
+      shell: oc delete svc/customer -n tutorial
 
     - name: Expondo servico customer
-      shell: oc create -f istio-tutorial/customer/kubernetes/Service.yml
-
-#    - name: Aguardando build do projeto Customer
-#      shell: oc get po | grep -v build | grep Running
-#      register: customer
-#      until: customer.stdout.find("customer") != -1
-#      retries: 30
-#      delay: 30
+      shell: oc apply -f istio-tutorial/customer/kubernetes/Service.yml -n tutorial
 
     - name: Exponde servico customer
-      shell: oc expose service customer
-
-#    - name: Testando projeto Customer
-#      shell: curl customer-tutorial.{{ocp_url}}
-#      register: custtut
-#      until: custtut.stdout.find("UnknownHostException") != -1
-#      retries: 20
-#      delay: 5
+      shell: oc expose service customer -n tutorial || echo 'Já existe'
 
     - name: Iniciando build projeto Preference
       shell: oc new-app -l app=preference,version=v1 --name=preference-v1 --context-dir=preference/java/springboot -e JAEGER_SERVICE_NAME=preference JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > preference.yml
 
     - name: Criando objetos a partir do template preference
-      shell: "./istio-{{ istio_version }}/bin/istioctl kube-inject -f preference.yml | oc apply -f -"
+      shell: "./istio-{{ istio_version }}/bin/istioctl kube-inject -f preference.yml -n tutorial | oc apply -f -"
 
     - name: Expondo servico preference
-      shell: oc delete svc/preference-v1
+      shell: oc delete svc/preference-v1 -n tutorial
 
     - name: Expondo servico preference
-      shell: oc create -f istio-tutorial/preference/kubernetes/Service.yml
-
-#    - name: Aguardando build do projeto preference
-#      shell: oc get po | grep -v build | grep Running
-#      register: pref
-#      until: pref.stdout.find("preference") != -1
-#      retries: 30
-      delay: 30
-
-#    - name: Testando projeto Preference
-#      shell: curl customer-tutorial.{{ocp_url}}
-#      register: custtut
-#      until: custtut.stdout.find("503 preference") != -1
-#      retries: 20
-#      delay: 5
+      shell: oc apply -f istio-tutorial/preference/kubernetes/Service.yml -n tutorial
 
     - name: Iniciando build projeto Recommendation
       shell: oc new-app -l app=recommendation,version=v1 --name=recommendation-v1 --context-dir=recommendation/java/vertx JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > recommendation.yml
 
     - name: Criando objetos a partir do template recommendation
-      shell: "./istio-{{ istio_version }}/bin/istioctl kube-inject -f recommendation.yml | oc apply -f -"
+      shell: "./istio-{{ istio_version }}/bin/istioctl kube-inject -f recommendation.yml -n tutorial | oc apply -f -"
 
     - name: Expondo servico recommendation
-      shell: oc delete svc/recommendation-v1
+      shell: oc delete svc/recommendation-v1 -n tutorial
 
     - name: Expondo servico recommendation
-      shell: oc create -f istio-tutorial/recommendation/kubernetes/Service.yml
+      shell: oc apply -f istio-tutorial/recommendation/kubernetes/Service.yml -n tutorial
 
     - name: Aguardando build do projeto Recomendation
-      shell: oc get po | grep -v build | grep Running
+      shell: oc get po -n tutorial | grep -v build | grep Running
       register: recom
       until: recom.stdout.find("recommendation") != -1
-      retries: 30
+      retries: 60
       delay: 30
 
     - name: Testando projeto Preference
       shell: curl customer-tutorial.$(minishift ip).nip.io
       register: rectut
       until: rectut.stdout.find("recommendation v1 from") != -1
-      retries: 20
+      retries: 60
       delay: 5
 
     - name: Projeto istio-system
       shell: oc project istio-system
 
     - name: Criando kiali config-map
-      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali-configmap.yaml | VERSION_LABEL={{ kiali_version }} JAEGER_URL=https://jaeger-query-istio-system.$(minishift ip).nip.io GRAFANA_URL=https://grafana-istio-system.$(minishift ip).nip.io envsubst | oc create -n istio-system -f -"
+      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali-configmap.yaml | VERSION_LABEL={{ kiali_version }} JAEGER_URL=https://jaeger-query-istio-system.$(minishift ip).nip.io GRAFANA_URL=https://grafana-istio-system.$(minishift ip).nip.io envsubst | oc apply -n istio-system -f -"
 
     - name: Criando kiali secrets
-      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali-secrets.yaml | VERSION_LABEL={{ kiali_version }} envsubst | oc create -n istio-system -f -"
+      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali-secrets.yaml | VERSION_LABEL={{ kiali_version }} envsubst | oc apply -n istio-system -f -"
 
     - name: Criando kiali
-      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali.yaml | VERSION_LABEL={{ kiali_version }} IMAGE_NAME=kiali/kiali IMAGE_VERSION={{ kiali_version }} NAMESPACE=istio-system VERBOSE_MODE=4 IMAGE_PULL_POLICY_TOKEN='imagePullPolicy: Always' envsubst | oc create -n istio-system -f - "
+      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali.yaml | VERSION_LABEL={{ kiali_version }} IMAGE_NAME=kiali/kiali IMAGE_VERSION={{ kiali_version }} NAMESPACE=istio-system VERBOSE_MODE=4 IMAGE_PULL_POLICY_TOKEN='imagePullPolicy: Always' envsubst | oc apply -n istio-system -f - "
 
