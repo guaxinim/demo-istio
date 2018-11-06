@@ -57,7 +57,7 @@
       when: ansible_distribution != "MacOSX"
 
     - name: Extract istio
-      shell: tar -zxvf /tmp/istio.tar.gz -C istio-{{ istio_version }}
+      shell: tar -zxvf /tmp/istio.tar.gz -C ./
 
     # - name: Download do Istio for Linux
     #   shell: "curl -L https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-linux.tar.gz | tar xz"
