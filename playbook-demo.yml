@@ -11,34 +11,63 @@
     - name: ATENCAO = Configurar mvn e istioctl no PATH antes da execução da demo
       shell: echo ""
 
+    - name: Set MacOSX facts
+      set_fact:
+        nav: open
+      when: ansible_distribution == "MacOSX"
+
+    - name: Set Linux facts
+      set_fact:
+        nav: firefox
+      when: ansible_distribution != "MacOSX"
+
     - name: Abrindo URL Grafana
-      shell: open "$(minishift openshift service grafana -u)/d/1/istio-dashboard?refresh=5s&orgId=1"
+      shell: "{{ nav }} $(minishift openshift service grafana -u)/d/1/istio-dashboard?refresh=5s&orgId=1"
 
     - name: Abrindo URL de Workload dos serviços
-      shell: open "$(minishift openshift service grafana -u)/d/UbsSZTDik/istio-workload-dashboard?refresh=5s&orgId=1"
+      shell: "{{ nav }} $(minishift openshift service grafana -u)/d/UbsSZTDik/istio-workload-dashboard?refresh=5s&orgId=1"
 
     - name: Abrindo métricas customizadas
-      shell: open "$(minishift openshift service prometheus -u)/graph?g0.range_input=5m&g0.expr=&g0.tab=0"
+      shell: '{{ nav }} $(minishift openshift service prometheus -u)/graph?g0.range_input=5m\&g0.expr=\&g0.tab=0'
 
     - name: Criando recommendation request no istio
       shell: ./istio-{{ istio_version }}/bin/istioctl create -f istio-tutorial/istiofiles/recommendation_requestcount.yml -n istio-system | echo "RequestCount ja existe"
 
     - pause:
-        prompt: istio_requests_total{destination_service="recommendation.tutorial.svc.cluster.local"}
+        prompt: |
+          ======================================================
+          Copy the following content into prometheus query field:
+
+          istio_requests_total{destination_service="recommendation.tutorial.svc.cluster.local"}
+
+          PRESS ENTER TO CONTINUE
+          ======================================================
 
     - name: Enviando requests ao serviço Customer
       shell: curl customer-tutorial.$(minishift ip).nip.io
       with_sequence: start=0 end=50
 
     - pause:
-        prompt: "====================  Tracing"
+        prompt: |
+          ======================================================
+          Tracing
+
+          PRESS ENTER TO CONTINUE
+          ======================================================
 
     - name: Abrindo Jaeger
-      shell: minishift openshift service tracing --in-browser
+      shell: '{{ nav }} $(minishift openshift service tracing -u)'
 
     - pause:
-        prompt: "curl customer-tutorial.$(minishift ip).nip.io"
+        prompt: |
+          ======================================================
+          Now execute the following command: 
+          
+          curl customer-tutorial.$(minishift ip).nip.io
 
+          PRESS ENTER TO CONTINUE
+          ======================================================
+        
     - pause:
         prompt: "====================  Deploy de nova versão Recommendation-V2"
 
