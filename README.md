@@ -15,7 +15,7 @@ You can run this demo locally or remotely using one of these methods below:
 * siege
 * minishift (if you want to run this demo in your machine)
 * Openshift cluster (if you want to run this demo remotely)
-* oc binary in your $PATH
+* oc v3.11 binary in your $PATH
 
 ## Minishift
 
