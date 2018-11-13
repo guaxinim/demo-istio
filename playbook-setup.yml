@@ -9,13 +9,13 @@
     kiali_version: v0.10.0
 
     # Remote ocp cluster, used only if minishift=false
-    ocp_url: apps.brasilia.openshiftworkshop.com  
-    master_url: master.brasilia.openshiftworkshop.com 
-    ocp_user: admin # this user must have cluster-admin role
-    ocp_pass: admin 
+    ocp_url: apps.brasilia-f3ca.openshiftworkshop.com  
+    master_url: https://master.brasilia-f3ca.openshiftworkshop.com 
+    ocp_user: opentlc-mgr # this user must have cluster-admin role
+    ocp_pass: r3dh4t1!
     
     # set to false to use a remote ocp cluster
-    minishift: true 
+    minishift: false 
 
   tasks:
 
@@ -66,7 +66,7 @@
       when: minishift == true
 
     - name: Openshift remote login
-      shell: "oc login {{ master_url }} -u {{ ocp_user }} -p {{ ocp_pass }}"
+      shell: "oc login {{ master_url }} -u {{ ocp_user }} -p {{ ocp_pass }} --insecure-skip-tls-verify"
       when: minishift == false
     
     - name: Download do Istio for OSX
