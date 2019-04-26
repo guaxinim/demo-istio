@@ -1,0 +1,263 @@
+---
+- hosts: localhost
+  name: "Setup da Demo do Istio no Openshift"
+  connection: local
+  vars:
+
+    # Vars
+    istio_version: 1.1.4
+    kiali_version: v0.18.1
+    helm_version: v2.13.1
+
+    # Remote ocp cluster, used only if minishift=false
+    ocp_url: apps.CITY-CODE.openshiftworkshop.com  
+    master_url: https://master.CITY-CODE.openshiftworkshop.com
+    ocp_user: ******** # this user must have cluster-admin role
+    ocp_pass: ********
+    
+    # set to false to use a remote ocp cluster
+    minishift: false 
+
+  tasks:
+
+    - name: Configurando Minishift profile Istio
+      shell: minishift profile set istio-work
+      when: minishift == true
+
+    - name: Configurando Minishift 8GB, 3 CPUs and image caching
+      shell: "minishift config set {{ item }}"
+      with_items:
+        - "memory 8GB"
+        - "cpus 3"
+        - "image-caching true"
+      when: minishift == true
+
+    - name: Configurando Minishift driver xhyve for MacOSX
+      shell: minishift config set vm-driver xhyve
+      when: ansible_distribution == "MacOSX" and minishift == true
+
+    - name: Configurando Minishift addons
+      shell: "minishift addon enable {{ item }}"
+      with_items:
+        - admin-user
+        - anyuid
+      when: minishift == true
+
+    - name: Iniciando minishift...
+      shell: minishift --profile istio-work start
+      when: minishift == true
+
+    - name: Get minishift ip
+      shell: minishift ip
+      register: minishift_ip
+      when: minishift == true
+
+    - name: Set wildcard for minishift
+      set_fact:
+        wildcard: "{{ minishift_ip.stdout }}.nip.io"
+      when: minishift == true
+
+    - name: Set wildcard for ocp remote
+      set_fact:
+        wildcard: "{{ ocp_url }}"
+      when: minishift == false
+
+    - name: Openshift login com o usuário de sistema
+      shell: oc login $(minishift ip):8443 -u admin -p admin
+      when: minishift == true
+
+    - name: Openshift remote login
+      shell: "oc login {{ master_url }} -u {{ ocp_user }} -p {{ ocp_pass }} --insecure-skip-tls-verify"
+      when: minishift == false
+    
+    - name: Download do Istio for OSX
+      get_url: 
+        url: https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-osx.tar.gz
+        dest: /tmp/istio.tar.gz
+      when: ansible_distribution == "MacOSX"
+
+    - name: Download do Istio for Linux
+      get_url: 
+        url: https://github.com/istio/istio/releases/download/{{ istio_version }}/istio-{{ istio_version }}-linux.tar.gz
+        dest: /tmp/istio.tar.gz
+      when: ansible_distribution != "MacOSX"
+
+    - name: Download do Helm for Linux
+      get_url: 
+        url: https://storage.googleapis.com/kubernetes-helm/helm-{{ helm_version }}-linux-386.tar.gz
+        dest: /tmp/helm.tar.gz
+      when: ansible_distribution != "MacOSX"
+
+    - name: Create folder workspace
+      file:
+        path: workspace
+        state: directory
+
+    - name: Extract istio
+      shell: tar -zxvf /tmp/istio.tar.gz -C ./workspace
+
+    - name: Extract helm
+      shell: tar -zxvf /tmp/helm.tar.gz -C ./workspace
+
+    #- name: Instalando crds.yaml
+    #  shell: "oc apply -f workspace/istio-{{ istio_version }}/install/kubernetes/helm/istio/templates/crds.yaml"
+
+    #- name: Instalando istio-demo.yaml
+    #  shell: "oc apply -f workspace/istio-{{ istio_version }}/install/kubernetes/istio-demo.yaml"
+
+    - name: Installing helm
+      shell: "oc apply -f workspace/istio-{{ istio_version }}/install/kubernetes/helm/helm-service-account.yaml"
+
+    - name: Creating project
+      shell: "oc new-project istio-system"
+
+    - name: Installing tiller
+      shell: "./workspace/linux-386/helm init --service-account tiller"
+
+    - name: Creating sa kiali
+      shell:
+        cmd: | 
+          cat <<EOF > kiali.yml
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: kiali
+            namespace: $NAMESPACE
+            labels:
+              app: kiali
+          type: Opaque
+          data:
+            username: YWRtaW4=
+            passphrase: cmVkaGF0QDEyMw==
+
+    - name: Installing sa grafana
+      shell:
+        cmd: |
+          cat <<EOF > grafana.yml
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: grafana
+            namespace: $NAMESPACE
+            labels:
+              app: grafana
+          type: Opaque
+          data:
+            username: YWRtaW4=
+            passphrase: cmVkaGF0QDEyMw==
+
+    - name: Installing sa grafana
+      shell: kubectl apply -f kiali.yml
+
+    - name: Installing sa grafana
+      shell: kubectl apply -f grafana.yml
+
+    - name: Installing istio-init via helm
+      shell: "./workspace/linux-386/helm install workspace/istio-1.1.4/install/kubernetes/helm/istio-init --name istio-init --namespace istio-system"
+
+    - name: Giving permissions
+      shell: "oc adm policy add-scc-to-user anyuid -z default -n istio-system"
+
+    - name: Installing istio via helm
+      shell: "./workspace/linux-386/helm install workspace/istio-1.1.4/install/kubernetes/helm/istio --name istio --namespace istio-system --set sidecarInjectorWebhook.enabled=false --set global.controlPlaneSecurityEnabled=true --set mixer.adapters.useAdapterCRDs=false --set grafana.enabled=true --set grafana.security.enabled=true --set tracing.enabled=true --set kiali.enabled=true"
+
+#    Removendo recursos se der erro:
+#    ./workspace/linux-386/helm del --purge istio
+#    ./workspace/linux-386/helm del --purge istio-init
+
+#    - name: Criando projeto istio-system
+#      shell: oc new-project istio-system || oc project istio-system
+
+#    - name: Configurando Service Account projeto istio-system
+#      shell: oc adm policy add-scc-to-user anyuid -z "{{ item }}" -n istio-system
+#      with_items:
+#        - default
+#        - prometheus
+#        - istio-citadel-service-account
+#        - istio-cleanup-secrets-service-account
+#        - istio-egressgateway-service-account
+#        - istio-galley-service-account
+#        - istio-ingressgateway-service-account
+#        - istio-mixer-service-account
+#        - istio-grafana-post-install-account
+#        - istio-pilot-service-account
+#        - istio-sidecar-injector-service-account
+#      when: minishift == false
+
+    - name: Expondo istio services 
+      shell: "oc project istio-system"
+
+    - name: Aguardando containers do istio
+      shell: test $(oc get po | grep Running | wc -l) -gt 11
+      register: istio_containers
+      until: istio_containers.rc == 0
+      retries: 60
+      delay: 20
+
+    - name: New project tutorial
+      shell: oc new-project tutorial || oc project tutorial
+
+    - name: Policy anyuid
+      shell: oc adm policy add-scc-to-user privileged -z default -n tutorial
+
+    - name: Git clone istio-tutorial
+      git:
+        repo: https://github.com/guaxinim/istio-tutorial
+        dest: workspace/istio-tutorial
+        force: yes
+
+    - name: Iniciando build projeto Customer
+      shell: oc new-app --name=customer --context-dir=customer/java/springboot -e JAEGER_SERVICE_NAME=customer JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > workspace/customer.yml
+
+    - name: Criando objetos a partir do template Customer
+      shell: "workspace/istio-{{ istio_version }}/bin/istioctl kube-inject -f workspace/customer.yml -n tutorial | oc apply -f -"
+
+    - name: Expondo servico customer
+      shell: oc apply -f workspace/istio-tutorial/customer/kubernetes/Service.yml -n tutorial
+
+    - name: Exponde servico customer
+      shell: oc expose service customer -n tutorial || echo 'Já existe'
+
+    - name: Iniciando build projeto Preference
+      shell: oc new-app -n tutorial -l app=preference,version=v1 --name=preference-v1 --context-dir=preference/java/springboot -e JAEGER_SERVICE_NAME=preference JAEGER_ENDPOINT=http://jaeger-collector.istio-system.svc:14268/api/traces JAEGER_PROPAGATION=b3 JAEGER_SAMPLER_TYPE=const JAEGER_SAMPLER_PARAM=1 JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > workspace/preference.yml
+
+    - name: Criando objetos a partir do template preference
+      shell: "workspace/istio-{{ istio_version }}/bin/istioctl kube-inject -f workspace/preference.yml -n tutorial | oc apply -f -"
+
+    - name: Expondo servico preference
+      shell: oc apply -f workspace/istio-tutorial/preference/kubernetes/Service.yml -n tutorial
+
+    - name: Iniciando build projeto Recommendation
+      shell: oc new-app -n tutorial -l app=recommendation,version=v1 --name=recommendation-v1 --context-dir=recommendation/java/vertx JAVA_OPTIONS='-Xms128m -Xmx256m -Djava.net.preferIPv4Stack=true' fabric8/s2i-java~https://github.com/guaxinim/istio-tutorial -o yaml  > workspace/recommendation.yml
+
+    - name: Criando objetos a partir do template recommendation
+      shell: "workspace/istio-{{ istio_version }}/bin/istioctl kube-inject -f workspace/recommendation.yml -n tutorial | oc apply -f -"
+
+    - name: Expondo servico recommendation
+      shell: oc apply -f workspace/istio-tutorial/recommendation/kubernetes/Service.yml -n tutorial
+
+    - name: Aguardando build do projeto Recomendation
+      shell: oc get po -n tutorial | grep -v build | grep Running
+      register: recom
+      until: recom.stdout.find("recommendation") != -1
+      retries: 60
+      delay: 30
+
+    - name: Testando projeto Preference
+      shell: curl customer-tutorial.{{ wildcard }}
+      register: rectut
+      until: rectut.stdout.find("recommendation v1 from") != -1
+      retries: 60
+      delay: 5
+
+    - name: Projeto istio-system
+      shell: oc project istio-system
+
+    - name: Criando kiali config-map
+      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali-configmap.yaml | VERSION_LABEL={{ kiali_version }} JAEGER_URL=https://jaeger-query-istio-system.{{ wildcard }} GRAFANA_URL=https://grafana-istio-system.{{ wildcard }} envsubst | oc apply -n istio-system -f -"
+
+    - name: Criando kiali secrets
+      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali-secrets.yaml | VERSION_LABEL={{ kiali_version }} envsubst | oc apply -n istio-system -f -"
+
+    - name: Criando kiali
+      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali.yaml | VERSION_LABEL={{ kiali_version }} IMAGE_NAME=kiali/kiali IMAGE_VERSION={{ kiali_version }} NAMESPACE=istio-system VERBOSE_MODE=4 IMAGE_PULL_POLICY_TOKEN='imagePullPolicy: Always' envsubst | oc apply -n istio-system -f - "
