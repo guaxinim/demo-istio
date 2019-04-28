@@ -147,10 +147,13 @@
             passphrase: cmVkaGF0QDEyMw==
 
     - name: Installing sa grafana
-      shell: kubectl apply -f kiali.yml
+      shell: oc apply -f kiali.yml
 
     - name: Installing sa grafana
-      shell: kubectl apply -f grafana.yml
+      shell: oc apply -f grafana.yml
+
+    - name: Add istio.io to helm
+      shell: "./workspace/linux-386/helm repo add istio.io https://storage.googleapis.com/istio-prerelease/daily-build/release-1.1-latest-daily/charts"
 
     - name: Installing istio-init via helm
       shell: "./workspace/linux-386/helm install workspace/istio-1.1.4/install/kubernetes/helm/istio-init --name istio-init --namespace istio-system"
