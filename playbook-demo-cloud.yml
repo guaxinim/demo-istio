@@ -12,19 +12,19 @@
       shell: echo ""
 
     - name: Abrindo console Openshift
-      shell: open "https://{{ master_url }}"
+      debug: msg="https://{{ master_url }}"
    
     - name: Abrindo URL Grafana
-      shell: open "http://grafana-istio-system.{{ ocp_url }}/d/1/istio-dashboard?refresh=5s&orgId=1"
+      debug: msg="http://grafana-istio-system.{{ ocp_url }}/d/1/istio-dashboard?refresh=5s&orgId=1"
 
     - name: Abrindo URL de Workload dos serviços
-      shell: open "http://grafana-istio-system.{{ ocp_url }}/d/UbsSZTDik/istio-workload-dashboard?refresh=5s&orgId=1"
+      debug: msg="http://grafana-istio-system.{{ ocp_url }}/d/UbsSZTDik/istio-workload-dashboard?refresh=5s&orgId=1"
 
     - name: Abrindo métricas customizadas
-      shell: open "http://prometheus-istio-system.{{ ocp_url }}/graph?g0.range_input=5m&g0.expr=&g0.tab=0"
+      debug: msg="http://prometheus-istio-system.{{ ocp_url }}/graph?g0.range_input=5m&g0.expr=&g0.tab=0"
 
     - name: Abrindo Kiali
-      shell: open "https://kiali-istio-system.{{ ocp_url }}"
+      debug: msg="https://kiali-istio-system.{{ ocp_url }}"
 
     - name: Exportando ISTIO_HOME
       shell: export ISTIO_HOME=`pwd`/istio-1.0.0/bin
@@ -46,7 +46,7 @@
         prompt: "====================  Tracing"
 
     - name: Abrindo Jaeger
-      shell: open "http://tracing-istio-system.{{ ocp_url }}"
+      debug: msg="http://tracing-istio-system.{{ ocp_url }}"
 
     - pause:
         prompt: "curl customer-tutorial.{{ ocp_url }}"
