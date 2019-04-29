@@ -182,7 +182,7 @@
     - name: Testando projeto Preference
       shell: curl customer-tutorial.{{ ocp_url }}
       register: rectut
-      until: rectut.stdout.find("preference") != -1
+      until: rectut.stdout.find("customer => preference") != -1
       retries: 60
       delay: 5
 
