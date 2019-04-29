@@ -130,7 +130,7 @@
       retries: 60
       delay: 20
 
-    - name: New project tutorial
+    - name: tutorial
       shell: oc new-project tutorial || oc project tutorial
 
     - name: Policy anyuid
@@ -180,9 +180,9 @@
       delay: 30
 
     - name: Testando projeto Preference
-      shell: curl customer-tutorial.{{ wildcard }}
+      shell: curl customer-tutorial.{{ ocp_url }}
       register: rectut
-      until: rectut.stdout.find("recommendation v1 from") != -1
+      until: rectut.stdout.find("preference") != -1
       retries: 60
       delay: 5
 
@@ -190,7 +190,7 @@
       shell: oc project istio-system
 
     - name: Criando kiali config-map
-      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali-configmap.yaml | VERSION_LABEL={{ kiali_version }} JAEGER_URL=https://jaeger-query-istio-system.{{ wildcard }} GRAFANA_URL=https://grafana-istio-system.{{ wildcard }} envsubst | oc apply -n istio-system -f -"
+      shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali-configmap.yaml | VERSION_LABEL={{ kiali_version }} JAEGER_URL=https://jaeger-query-istio-system.{{ ocp_url }} GRAFANA_URL=https://grafana-istio-system.{{ ocp_url }} envsubst | oc apply -n istio-system -f -"
 
     - name: Criando kiali secrets
       shell: "curl https://raw.githubusercontent.com/kiali/kiali/{{ kiali_version }}/deploy/openshift/kiali-secrets.yaml | VERSION_LABEL={{ kiali_version }} envsubst | oc apply -n istio-system -f -"
